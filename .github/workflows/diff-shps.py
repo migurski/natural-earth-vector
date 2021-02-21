@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import os
-import itertools
+import json
+import shutil
+import difflib
 import tempfile
 import logging
 import requests
+import subprocess
 import dotenv
 import osgeo.ogr
 
@@ -63,9 +66,66 @@ def list_ref_paths(env, path_stem, ref):
     
     return files
 
+def load_features(path):
+    with open(head_geojson_path) as file:
+        return [
+            (
+                tuple(sorted(feature['properties'].items())),
+                (
+                    feature['geometry']['type'],
+                    tuple([
+                        round(c, 6)
+                        for c in feature['geometry']['coordinates']
+                    ]),
+                ),
+            )
+            for feature in json.load(file)['features']
+        ]
+
 if __name__ == '__main__':
     
     for stem in list_compare_stems(os.environ):
         base_files = list_ref_paths(os.environ, stem, os.environ['GITHUB_BASE_REF'])
         head_files = list_ref_paths(os.environ, stem, os.environ['GITHUB_HEAD_REF'])
+        
+        base_list = sorted(list(base_files.keys()))
+        head_list = sorted(list(head_files.keys()))
+        
+        tempdir = tempfile.mkdtemp()
+        
+        for path in (base_files.keys() & head_files.keys()):
+            ext = splitext_ext(path)
 
+            base_url = base_files[path]
+            with open(f'{tempdir}/base{ext}', 'wb') as file:
+                print(file.name)
+                file.write(requests.get(base_url, headers={
+                    'Authorization': 'token {token}'.format(token=os.environ['API_ACCESS_TOKEN']),
+                }).content)
+                if ext == '.shp':
+                    base_shp_path = file.name
+
+            head_url = head_files[path]
+            with open(f'{tempdir}/head{ext}', 'wb') as file:
+                print(file.name)
+                file.write(requests.get(head_url, headers={
+                    'Authorization': 'token {token}'.format(token=os.environ['API_ACCESS_TOKEN']),
+                }).content)
+                if ext == '.shp':
+                    head_shp_path = file.name
+        
+        base_geojson_path = f'{tempdir}/base.geojson'
+        head_geojson_path = f'{tempdir}/head.geojson'
+
+        cmd1 = ('ogr2ogr', '-f', 'GeoJSON', base_geojson_path, base_shp_path)
+        subprocess.check_call(cmd1)
+        
+        cmd2 = ('ogr2ogr', '-f', 'GeoJSON', head_geojson_path, head_shp_path)
+        subprocess.check_call(cmd2)
+        
+        base_data = load_features(base_geojson_path)
+        head_data = load_features(head_geojson_path)
+        
+        print(difflib.SequenceMatcher(isjunk=None, a=base_data, b=head_data).get_opcodes())
+        
+        shutil.rmtree(tempdir)
