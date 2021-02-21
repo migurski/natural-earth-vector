@@ -17,6 +17,7 @@ jobs:
     
     env:
       API_ACCESS_TOKEN: ${{ secrets.API_ACCESS_TOKEN }}
+      PATH: ${{ env.PATH }}:/home/runner/.local/bin
 
     steps:
         - name: Output some env vars
@@ -28,14 +29,13 @@ jobs:
             echo GITHUB_REF: $GITHUB_REF
             echo GITHUB_SERVER_URL: $GITHUB_SERVER_URL
             echo GITHUB_API_URL: $GITHUB_API_URL
-            echo VIRTUAL_ENV: $VIRTUAL_ENV
         - name: Who am I?
           run: |
             curl https://api.github.com/user -H "Authorization: token ${API_ACCESS_TOKEN}"
         - name: Setup Python3 and GDAL
           run: |
             sudo apt-get update
-            sudo apt-get install -y python3-pip python3-gdal
+            sudo apt-get install --no-install-recommends -y python3-pip python3-gdal
         - name: Get needed packages
           run: |
             python3 --version
