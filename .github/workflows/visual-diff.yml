@@ -17,7 +17,7 @@ jobs:
     
     env:
       API_ACCESS_TOKEN: ${{ secrets.API_ACCESS_TOKEN }}
-      PATH: ${{ env.PATH }}:/home/runner/.local/bin
+      PATH: $PATH:/home/runner/.local/bin
 
     steps:
         - name: Output some env vars
