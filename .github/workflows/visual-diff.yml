@@ -31,6 +31,11 @@ jobs:
         - name: Who am I?
           run: |
             curl https://api.github.com/user -H "Authorization: token ${API_ACCESS_TOKEN}"
+        - name: Setup python
+          uses: actions/setup-python@v2
+          with:
+            python-version: 3.8
         - name: Get needed packages
           run: |
-            pip3 install requests
+            python3 --version
+            pip3 install flask
