@@ -31,10 +31,10 @@ jobs:
         - name: Who am I?
           run: |
             curl https://api.github.com/user -H "Authorization: token ${API_ACCESS_TOKEN}"
-        - name: Setup python
-          uses: actions/setup-python@v2
-          with:
-            python-version: 3.8
+        - name: Setup Python3 and GDAL
+          run: |
+            sudo apt-get update
+            sudo apg-get install -y python3-pip python3-gdal
         - name: Get needed packages
           run: |
             python3 --version
