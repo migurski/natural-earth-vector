@@ -13,17 +13,21 @@ on:
 jobs:
   # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
+    
+    env:
+      API_ACCESS_TOKEN: ${{ secrets.API_ACCESS_TOKEN }}
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+        - name: Output some env vars
+          run: |
+            echo PWD: $PWD
+            echo GITHUB_REPOSITORY: $GITHUB_REPOSITORY
+            echo GITHUB_WORKSPACE: $GITHUB_WORKSPACE
+            echo GITHUB_SHA: $GITHUB_SHA
+            echo GITHUB_REF: $GITHUB_REF
+            echo GITHUB_SERVER_URL: $GITHUB_SERVER_URL
+            echo GITHUB_API_URL: $GITHUB_API_URL
+        - name: Who am I?
+          run: |
+            curl https://api.github.com/user -H "Authorization: token ${API_ACCESS_TOKEN}"
