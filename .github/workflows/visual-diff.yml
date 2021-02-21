@@ -33,5 +33,4 @@ jobs:
             curl https://api.github.com/user -H "Authorization: token ${API_ACCESS_TOKEN}"
         - name: Get needed packages
           run: |
-            apt-get update
-            apt-get install -y python3-gdal python3-pip
+            pip3 install requests
