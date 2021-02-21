@@ -28,6 +28,7 @@ jobs:
             echo GITHUB_REF: $GITHUB_REF
             echo GITHUB_SERVER_URL: $GITHUB_SERVER_URL
             echo GITHUB_API_URL: $GITHUB_API_URL
+            echo VIRTUAL_ENV: $VIRTUAL_ENV
         - name: Who am I?
           run: |
             curl https://api.github.com/user -H "Authorization: token ${API_ACCESS_TOKEN}"
