@@ -31,6 +31,7 @@ jobs:
         - name: Who am I?
           run: |
             curl https://api.github.com/user -H "Authorization: token ${API_ACCESS_TOKEN}"
-        - name: What is here?
+        - name: Get needed packages
           run: |
-            find .
+            apt-get update
+            apt-get install -y python3-gdal python3-pip
