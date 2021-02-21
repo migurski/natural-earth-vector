@@ -34,7 +34,7 @@ jobs:
         - name: Setup Python3 and GDAL
           run: |
             sudo apt-get update
-            sudo apg-get install -y python3-pip python3-gdal
+            sudo apt-get install -y python3-pip python3-gdal
         - name: Get needed packages
           run: |
             python3 --version
