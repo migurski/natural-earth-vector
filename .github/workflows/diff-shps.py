@@ -103,16 +103,18 @@ def unspooled_coordinates(geometry):
 
 def load_features(path):
     with open(path) as file:
+        features = json.load(file)['features']
+    
         return [
-            Feature(
-                tuple(sorted(feature['properties'].items())),
-                Geometry(
-                    feature['geometry']['type'],
-                    tuple(feature['bbox']),
-                    unspooled_coordinates(feature['geometry']),
-                ),
+            tuple(sorted(feature['properties'].items()))
+            for feature in features
+        ], [
+            Geometry(
+                feature['geometry']['type'],
+                tuple(feature['bbox']),
+                unspooled_coordinates(feature['geometry']),
             )
-            for feature in json.load(file)['features']
+            for feature in features
         ]
 
 if __name__ == '__main__':
@@ -166,17 +168,31 @@ if __name__ == '__main__':
         )
         subprocess.check_call(cmd2)
         
-        base_data = load_features(base_geojson_path)
-        head_data = load_features(head_geojson_path)
-        matcher = difflib.SequenceMatcher(isjunk=None, a=base_data, b=head_data)
+        base_props, base_geoms = load_features(base_geojson_path)
+        head_props, head_geoms = load_features(head_geojson_path)
+
+        matcher1 = difflib.SequenceMatcher(isjunk=None, a=base_props, b=head_props)
+        print(matcher1.get_opcodes())
         
-        for (tag, i1, i2, j1, j2) in sorted(matcher.get_opcodes()):
+        for (tag, i1, i2, j1, j2) in matcher1.get_opcodes():
             if tag == 'delete':
-                print('Delete', base_data[i1:i2])
+                print('Delete', base_props[i1:i2])
             elif tag == 'insert':
-                print('Insert', head_data[j1:j2])
+                print('Insert', head_props[j1:j2])
             elif tag == 'replace':
-                print('Replace', base_data[i1:i2])
-                print('   with', head_data[j1:j2])
+                print('Replace', base_props[i1:i2])
+                print('   with', head_props[j1:j2])
+
+        matcher2 = difflib.SequenceMatcher(isjunk=None, a=base_geoms, b=head_geoms)
+        print(matcher2.get_opcodes())
+        
+        for (tag, i1, i2, j1, j2) in matcher2.get_opcodes():
+            if tag == 'delete':
+                print('Delete', base_geoms[i1:i2])
+            elif tag == 'insert':
+                print('Insert', head_geoms[j1:j2])
+            elif tag == 'replace':
+                print('Replace', base_geoms[i1:i2])
+                print('   with', head_geoms[j1:j2])
 
         shutil.rmtree(tempdir)
