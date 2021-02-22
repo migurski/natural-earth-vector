@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import json
+import typing
 import shutil
 import difflib
 import tempfile
@@ -14,6 +15,15 @@ dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 GIS_EXTENSIONS = ('.cpg', '.dbf', '.prj', '.shp', '.shx')
+
+class Geometry (typing.NamedTuple):
+    type: tuple
+    bbox: tuple
+    coordinates: tuple
+
+class Feature (typing.NamedTuple):
+    properties: tuple
+    geometry: Geometry
 
 splitext_base = lambda path: os.path.splitext(path)[0]
 splitext_ext = lambda path: os.path.splitext(path)[1].lower()
@@ -68,32 +78,24 @@ def list_ref_paths(env, path_stem, ref):
 
 def unspooled_coordinates(geometry):
     if geometry['type'] == 'Point':
-        return tuple([round(c, 6) for c in geometry['coordinates']])
+        # [x, y]
+        return tuple(geometry['coordinates'])
 
     if geometry['type'] in ('MultiPoint', 'LineString'):
-        return tuple([
-            tuple([round(c, 6) for c in coord])
-            for coord in geometry['coordinates']
-        ])
+        # [[x, y], [...]]
+        return tuple(map(tuple, geometry['coordinates']))
 
     if geometry['type'] in ('MultiLineString', 'Polygon'):
+        # [[[x, y], [...]], [[...], [...]]]
         return tuple([
-            tuple([
-                tuple([round(c, 6) for c in coord])
-                for coord in coords
-            ])
+            tuple(map(tuple, coords))
             for coords in geometry['coordinates']
         ])
 
     if geometry['type'] == 'MultiPolygon':
+        # [[[[x, y], [...]], [[...], [...]]], [[[...], [....]], [[...], [...]]]]
         return tuple([
-            tuple([
-                tuple([
-                    tuple([round(c, 6) for c in coord])
-                    for coord in ring
-                ])
-                for ring in geom
-            ])
+            tuple([tuple(map(tuple, ring)) for ring in geom])
             for geom in geometry['coordinates']
         ])
 
@@ -102,10 +104,11 @@ def unspooled_coordinates(geometry):
 def load_features(path):
     with open(path) as file:
         return [
-            (
+            Feature(
                 tuple(sorted(feature['properties'].items())),
-                (
+                Geometry(
                     feature['geometry']['type'],
+                    tuple(feature['bbox']),
                     unspooled_coordinates(feature['geometry']),
                 ),
             )
@@ -128,7 +131,7 @@ if __name__ == '__main__':
 
             base_url = base_files[path]
             with open(f'{tempdir}/base{ext}', 'wb') as file1:
-                print(base_url, '->', file1.name)
+                logging.info(file1.name)
                 file1.write(requests.get(base_url, headers={
                     'Authorization': 'token {token}'.format(token=os.environ['API_ACCESS_TOKEN']),
                 }).content)
@@ -137,7 +140,7 @@ if __name__ == '__main__':
 
             head_url = head_files[path]
             with open(f'{tempdir}/head{ext}', 'wb') as file2:
-                print(head_url, '->', file2.name)
+                logging.info(file2.name)
                 file2.write(requests.get(head_url, headers={
                     'Authorization': 'token {token}'.format(token=os.environ['API_ACCESS_TOKEN']),
                 }).content)
@@ -147,15 +150,33 @@ if __name__ == '__main__':
         base_geojson_path = f'{tempdir}/base.geojson'
         head_geojson_path = f'{tempdir}/head.geojson'
 
-        cmd1 = ('ogr2ogr', '-f', 'GeoJSON', base_geojson_path, base_shp_path)
+        cmd1 = (
+            'ogr2ogr', '-f', 'GeoJSON',
+            '-lco', 'WRITE_BBOX=YES',
+            '-lco', 'COORDINATE_PRECISION=7',
+            base_geojson_path, base_shp_path,
+        )
         subprocess.check_call(cmd1)
         
-        cmd2 = ('ogr2ogr', '-f', 'GeoJSON', head_geojson_path, head_shp_path)
+        cmd2 = (
+            'ogr2ogr', '-f', 'GeoJSON',
+            '-lco', 'WRITE_BBOX=YES',
+            '-lco', 'COORDINATE_PRECISION=7',
+            head_geojson_path, head_shp_path,
+        )
         subprocess.check_call(cmd2)
         
         base_data = load_features(base_geojson_path)
         head_data = load_features(head_geojson_path)
+        matcher = difflib.SequenceMatcher(isjunk=None, a=base_data, b=head_data)
         
-        print(difflib.SequenceMatcher(isjunk=None, a=base_data, b=head_data).get_opcodes())
-        
+        for (tag, i1, i2, j1, j2) in sorted(matcher.get_opcodes()):
+            if tag == 'delete':
+                print('Delete', base_data[i1:i2])
+            elif tag == 'insert':
+                print('Insert', head_data[j1:j2])
+            elif tag == 'replace':
+                print('Replace', base_data[i1:i2])
+                print('   with', head_data[j1:j2])
+
         shutil.rmtree(tempdir)
