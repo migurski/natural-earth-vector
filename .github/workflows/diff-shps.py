@@ -66,17 +66,47 @@ def list_ref_paths(env, path_stem, ref):
     
     return files
 
+def unspooled_coordinates(geometry):
+    if geometry['type'] == 'Point':
+        return tuple([round(c, 6) for c in geometry['coordinates']])
+
+    if geometry['type'] in ('MultiPoint', 'LineString'):
+        return tuple([
+            tuple([round(c, 6) for c in coord])
+            for coord in geometry['coordinates']
+        ])
+
+    if geometry['type'] in ('MultiLineString', 'Polygon'):
+        return tuple([
+            tuple([
+                tuple([round(c, 6) for c in coord])
+                for coord in coords
+            ])
+            for coords in geometry['coordinates']
+        ])
+
+    if geometry['type'] == 'MultiPolygon':
+        return tuple([
+            tuple([
+                tuple([
+                    tuple([round(c, 6) for c in coord])
+                    for coord in ring
+                ])
+                for ring in geom
+            ])
+            for geom in geometry['coordinates']
+        ])
+
+    raise ValueError(f"Unknown geometry type: {geometry['type']}")
+
 def load_features(path):
-    with open(head_geojson_path) as file:
+    with open(path) as file:
         return [
             (
                 tuple(sorted(feature['properties'].items())),
                 (
                     feature['geometry']['type'],
-                    tuple([
-                        round(c, 6)
-                        for c in feature['geometry']['coordinates']
-                    ]),
+                    unspooled_coordinates(feature['geometry']),
                 ),
             )
             for feature in json.load(file)['features']
@@ -97,22 +127,22 @@ if __name__ == '__main__':
             ext = splitext_ext(path)
 
             base_url = base_files[path]
-            with open(f'{tempdir}/base{ext}', 'wb') as file:
-                print(file.name)
-                file.write(requests.get(base_url, headers={
+            with open(f'{tempdir}/base{ext}', 'wb') as file1:
+                print(base_url, '->', file1.name)
+                file1.write(requests.get(base_url, headers={
                     'Authorization': 'token {token}'.format(token=os.environ['API_ACCESS_TOKEN']),
                 }).content)
                 if ext == '.shp':
-                    base_shp_path = file.name
+                    base_shp_path = file1.name
 
             head_url = head_files[path]
-            with open(f'{tempdir}/head{ext}', 'wb') as file:
-                print(file.name)
-                file.write(requests.get(head_url, headers={
+            with open(f'{tempdir}/head{ext}', 'wb') as file2:
+                print(head_url, '->', file2.name)
+                file2.write(requests.get(head_url, headers={
                     'Authorization': 'token {token}'.format(token=os.environ['API_ACCESS_TOKEN']),
                 }).content)
                 if ext == '.shp':
-                    head_shp_path = file.name
+                    head_shp_path = file2.name
         
         base_geojson_path = f'{tempdir}/base.geojson'
         head_geojson_path = f'{tempdir}/head.geojson'
