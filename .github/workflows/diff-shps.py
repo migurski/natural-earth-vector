@@ -28,6 +28,29 @@ class Feature (typing.NamedTuple):
 splitext_base = lambda path: os.path.splitext(path)[0]
 splitext_ext = lambda path: os.path.splitext(path)[1].lower()
 
+def find_pull_request(env):
+    pulls_url = '{api_url}/repos/{repo}/pulls?per_page=1'.format(
+        api_url=env['GITHUB_API_URL'],
+        repo=env['GITHUB_REPOSITORY'],
+    )
+    
+    while True:
+        print(pulls_url)
+    
+        got_pulls = requests.get(pulls_url, headers={
+            'Authorization': 'token {token}'.format(token=env['API_ACCESS_TOKEN']),
+        })
+        
+        for pull in got_pulls.json():
+            if not pull['base']['sha'].startswith(env['GITHUB_BASE_REF']):
+                continue
+            if not pull['head']['sha'].startswith(env['GITHUB_HEAD_REF']):
+                continue
+            
+            return pull['comments_url']
+        
+        return None
+
 def list_compare_stems(env):
     compare_url = '{api_url}/repos/{repo}/compare/{base_ref}...{head_ref}'.format(
         api_url=env['GITHUB_API_URL'],
@@ -116,6 +139,9 @@ def load_features(path):
         ]
 
 if __name__ == '__main__':
+
+    comment_url = find_pull_request(os.environ)
+    comment_lines = []
     
     for stem in list_compare_stems(os.environ):
         base_files = list_ref_paths(os.environ, stem, os.environ['GITHUB_BASE_REF'])
@@ -170,13 +196,31 @@ if __name__ == '__main__':
         head_data = load_features(head_geojson_path)
         matcher = difflib.SequenceMatcher(isjunk=None, a=base_data, b=head_data)
         
+        diff_lines = []
+        
         for (tag, i1, i2, j1, j2) in sorted(matcher.get_opcodes()):
             if tag == 'delete':
                 print('Delete', base_data[i1:i2])
+                diff_lines.append('- Delete old feature {}'.format(i1+1))
             elif tag == 'insert':
                 print('Insert', head_data[j1:j2])
+                diff_lines.append('- Ådd new feature {}'.format(j1+1))
             elif tag == 'replace':
                 print('Replace', base_data[i1:i2])
                 print('   with', head_data[j1:j2])
+                diff_lines.append('- Replace old feature {} with new feature {}'.format(i1+1, j1+1))
+        
+        if diff_lines:
+            comment_lines.extend([f'### {stem}:', ''] + diff_lines + [''])
 
         shutil.rmtree(tempdir)
+    
+    posted = requests.post(
+        comment_url,
+        data=json.dumps({'body': '\n'.join(comment_lines)}),
+        headers={
+            'Authorization': 'token {token}'.format(token=os.environ['API_ACCESS_TOKEN']),
+        },
+    )
+    
+    print(posted.json())
