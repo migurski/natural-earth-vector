@@ -16,6 +16,10 @@ logging.basicConfig(level=logging.INFO)
 
 GIS_EXTENSIONS = ('.cpg', '.dbf', '.prj', '.shp', '.shx')
 
+class Point (typing.NamedTuple):
+    x: float
+    y: float
+
 class Geometry (typing.NamedTuple):
     type: tuple
     bbox: tuple
@@ -102,23 +106,23 @@ def list_ref_paths(env, path_stem, ref):
 def unspooled_coordinates(geometry):
     if geometry['type'] == 'Point':
         # [x, y]
-        return tuple(geometry['coordinates'])
+        return Point(*geometry['coordinates'])
 
     if geometry['type'] in ('MultiPoint', 'LineString'):
         # [[x, y], [...]]
-        return tuple(map(tuple, geometry['coordinates']))
+        return tuple([Point(*xy) for xy in geometry['coordinates']])
 
     if geometry['type'] in ('MultiLineString', 'Polygon'):
         # [[[x, y], [...]], [[...], [...]]]
         return tuple([
-            tuple(map(tuple, coords))
+            tuple([Point(*xy) for xy in coords])
             for coords in geometry['coordinates']
         ])
 
     if geometry['type'] == 'MultiPolygon':
         # [[[[x, y], [...]], [[...], [...]]], [[[...], [....]], [[...], [...]]]]
         return tuple([
-            tuple([tuple(map(tuple, ring)) for ring in geom])
+            tuple([tuple([Point(*xy) for xy in ring]) for ring in geom])
             for geom in geometry['coordinates']
         ])
 
