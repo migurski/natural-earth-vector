@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import math
 import json
 import typing
 import shutil
@@ -7,9 +8,10 @@ import difflib
 import tempfile
 import logging
 import requests
-import subprocess
 import dotenv
 import osgeo.ogr
+import osgeo.osr
+import cairo
 
 dotenv.load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -129,18 +131,83 @@ def unspooled_coordinates(geometry):
     raise ValueError(f"Unknown geometry type: {geometry['type']}")
 
 def load_features(path):
-    with open(path) as file:
-        return [
-            Feature(
-                tuple(sorted(feature['properties'].items())),
-                Geometry(
-                    feature['geometry']['type'],
-                    tuple(feature['bbox']),
-                    unspooled_coordinates(feature['geometry']),
-                ),
-            )
-            for feature in json.load(file)['features']
-        ]
+    mercator = osgeo.osr.SpatialReference()
+    mercator.ImportFromEPSG(3857)
+
+    ds = osgeo.ogr.Open(path)
+    layer = ds.GetLayer(0)
+    features = list()
+    
+    for feature in layer:
+        geometry = feature.GetGeometryRef()
+        geometry.TransformTo(mercator)
+        geojson = feature.ExportToJson(True, ['COORDINATE_PRECISION:0'])
+
+        features.append(Feature(
+            tuple(sorted(geojson['properties'].items())),
+            Geometry(
+                geojson['geometry']['type'],
+                tuple(map(int, geometry.GetEnvelope())),
+                unspooled_coordinates(geojson['geometry']),
+            ),
+        ))
+
+    return features
+    
+def combined_bboxes(features):
+    lefts, rights, bottoms, tops = zip(*[f.geometry.bbox for f in features])
+    return (min(lefts), max(rights), min(bottoms), max(tops))
+
+def line_movements(ctx, coordinates):
+    ctx.move_to(*coordinates[0])
+    for (x, y) in coordinates[1:]:
+        ctx.line_to(x, y)
+
+def point_movements(ctx, coordinates):
+    for (x, y) in coordinates:
+        radius, _ = ctx.device_to_user_distance(3, 0)
+        ctx.move_to(x, y)
+        ctx.arc(x, y, radius, 0, math.pi*2)
+
+def draw_geometry(ctx, feature, fill_rgb, stroke_rgb):
+    if feature.geometry.type == 'MultiPolygon':
+        for geom in feature.geometry.coordinates:
+            for coords in geom:
+                line_movements(ctx, coords)
+                ctx.set_source_rgb(*fill_rgb)
+            ctx.fill()
+            for coords in geom:
+                line_movements(ctx, coords)
+                ctx.set_source_rgb(*stroke_rgb)
+                ctx.stroke()
+    elif feature.geometry.type == 'Polygon':
+        for coords in feature.geometry.coordinates:
+            line_movements(ctx, coords)
+            ctx.set_source_rgb(*fill_rgb)
+        ctx.fill()
+        for coords in feature.geometry.coordinates:
+            line_movements(ctx, coords)
+            ctx.set_source_rgb(*stroke_rgb)
+            ctx.stroke()
+    elif feature.geometry.type == 'MultiLineString':
+        for coords in feature.geometry.coordinates:
+            line_movements(ctx, coords)
+            ctx.set_source_rgb(*stroke_rgb)
+            ctx.stroke()
+    elif feature.geometry.type == 'LineString':
+        line_movements(ctx, feature.geometry.coordinates)
+        ctx.set_source_rgb(*stroke_rgb)
+        ctx.stroke()
+    elif feature.geometry.type == 'MultiPoint':
+        point_movements(ctx, feature.geometry.coordinates)
+        ctx.set_source_rgb(*fill_rgb)
+        ctx.fill()
+    elif feature.geometry.type == 'Point':
+        point_movements(ctx, [feature.geometry.coordinates])
+        ctx.set_source_rgb(*fill_rgb)
+        ctx.fill()
+    else:
+        raise ValueError(feature.geometry.type)
 
 if __name__ == '__main__':
 
@@ -177,47 +244,50 @@ if __name__ == '__main__':
                 if ext == '.shp':
                     head_shp_path = file2.name
         
-        base_geojson_path = f'{tempdir}/base.geojson'
-        head_geojson_path = f'{tempdir}/head.geojson'
-
-        cmd1 = (
-            'ogr2ogr', '-f', 'GeoJSON',
-            '-lco', 'WRITE_BBOX=YES',
-            '-lco', 'COORDINATE_PRECISION=7',
-            base_geojson_path, base_shp_path,
-        )
-        subprocess.check_call(cmd1)
-        
-        cmd2 = (
-            'ogr2ogr', '-f', 'GeoJSON',
-            '-lco', 'WRITE_BBOX=YES',
-            '-lco', 'COORDINATE_PRECISION=7',
-            head_geojson_path, head_shp_path,
-        )
-        subprocess.check_call(cmd2)
-        
-        base_data = load_features(base_geojson_path)
-        head_data = load_features(head_geojson_path)
+        base_data = load_features(base_shp_path)
+        head_data = load_features(head_shp_path)
         matcher = difflib.SequenceMatcher(isjunk=None, a=base_data, b=head_data)
         
-        diff_lines = []
+        diff_lines, add_features, rm_features = [], [], []
         
         for (tag, i1, i2, j1, j2) in sorted(matcher.get_opcodes()):
             if tag == 'delete':
                 print('Delete', base_data[i1:i2])
                 diff_lines.append('- Delete old feature {}'.format(i1+1))
+                rm_features.extend(base_data[i1:i2])
             elif tag == 'insert':
                 print('Insert', head_data[j1:j2])
                 diff_lines.append('- Ådd new feature {}'.format(j1+1))
+                add_features.extend(head_data[j1:j2])
             elif tag == 'replace':
                 print('Replace', base_data[i1:i2])
                 print('   with', head_data[j1:j2])
                 diff_lines.append('- Replace old feature {} with new feature {}'.format(i1+1, j1+1))
+                rm_features.extend(base_data[i1:i2])
+                add_features.extend(head_data[j1:j2])
+        
+        print('...bbox:', combined_bboxes(add_features + rm_features))
+        
+        with cairo.SVGSurface(f'{stem}.svg', 400, 400) as surface:
+            ctx = cairo.Context(surface)
+            ctx.translate(200, 200)
+            ctx.scale(400/16000, 400/16000)
+            ctx.set_line_width(16000/400)
+            ctx.set_operator(cairo.Operator.MULTIPLY)
+            ctx.scale(1, -1)
+
+            for feature in add_features:
+                draw_geometry(ctx, feature, (.3, 1, 1), (0, .3, 1))
+
+            for feature in rm_features:
+                draw_geometry(ctx, feature, (1, .5, .5), (.9, 0, 0))
         
         if diff_lines:
             comment_lines.extend([f'### {stem}:', ''] + diff_lines + [''])
 
         shutil.rmtree(tempdir)
+    
+    exit()
     
     posted = requests.post(
         comment_url,
