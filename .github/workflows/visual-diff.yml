@@ -36,7 +36,7 @@ jobs:
         - name: Setup Python3 and GDAL
           run: |
             sudo apt-get update
-            sudo apt-get install --no-install-recommends -y python3-pip python3-gdal
+            sudo apt-get install --no-install-recommends -y python3-pip python3-gdal python3-shapely
         - name: Get needed packages
           run: |
             export PATH=$PATH:/home/runner/.local/bin
