@@ -174,26 +174,27 @@ def draw_geometry(ctx, feature, fill_rgb, stroke_rgb):
         for geom in feature.geometry.coordinates:
             for coords in geom:
                 line_movements(ctx, coords)
-                ctx.set_source_rgb(*fill_rgb)
-            ctx.fill()
+        ctx.set_source_rgb(*fill_rgb)
+        ctx.fill()
+        for geom in feature.geometry.coordinates:
             for coords in geom:
                 line_movements(ctx, coords)
-                ctx.set_source_rgb(*stroke_rgb)
-                ctx.stroke()
+        ctx.set_source_rgb(*stroke_rgb)
+        ctx.stroke()
     elif feature.geometry.type == 'Polygon':
         for coords in feature.geometry.coordinates:
             line_movements(ctx, coords)
-            ctx.set_source_rgb(*fill_rgb)
+        ctx.set_source_rgb(*fill_rgb)
         ctx.fill()
         for coords in feature.geometry.coordinates:
             line_movements(ctx, coords)
-            ctx.set_source_rgb(*stroke_rgb)
-            ctx.stroke()
+        ctx.set_source_rgb(*stroke_rgb)
+        ctx.stroke()
     elif feature.geometry.type == 'MultiLineString':
         for coords in feature.geometry.coordinates:
             line_movements(ctx, coords)
-            ctx.set_source_rgb(*stroke_rgb)
-            ctx.stroke()
+        ctx.set_source_rgb(*stroke_rgb)
+        ctx.stroke()
     elif feature.geometry.type == 'LineString':
         line_movements(ctx, feature.geometry.coordinates)
         ctx.set_source_rgb(*stroke_rgb)
@@ -268,11 +269,11 @@ if __name__ == '__main__':
         
         print('...bbox:', combined_bboxes(add_features + rm_features))
         
-        with cairo.SVGSurface(f'{stem}.svg', 400, 400) as surface:
+        with cairo.ImageSurface(cairo.Format.ARGB32, 800, 800) as surface:
             ctx = cairo.Context(surface)
-            ctx.translate(200, 200)
-            ctx.scale(400/16000, 400/16000)
-            ctx.set_line_width(16000/400)
+            ctx.translate(800/2, 800/2)
+            ctx.scale(800/16000, 800/16000)
+            ctx.set_line_width(16000/800)
             ctx.set_operator(cairo.Operator.MULTIPLY)
             ctx.scale(1, -1)
 
@@ -281,6 +282,8 @@ if __name__ == '__main__':
 
             for feature in rm_features:
                 draw_geometry(ctx, feature, (1, .5, .5), (.9, 0, 0))
+            
+            surface.write_to_png(f'{stem}.png')
         
         if diff_lines:
             comment_lines.extend([f'### {stem}:', ''] + diff_lines + [''])
